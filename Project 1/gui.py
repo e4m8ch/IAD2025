@@ -9,49 +9,49 @@ import pyqtgraph as pg
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.title = 'Aquisição de Dados - Raspberry Pi'
+        self.title = 'Data Acquisition - Raspberry Pi'
         self.initUI()
         self.initSerial()
         self.timer = QTimer(self)
-        self.timer.timeout.connect(self.requestData)  # Timer para enviar comandos automaticamente
+        self.timer.timeout.connect(self.requestData)  # Timer to automatically send commands
 
     def initUI(self):
         self.setWindowTitle(self.title)
         self.setGeometry(400, 400, 800, 400)
 
-        # Criar widget central
+        # Create central widget
         centralWidget = QWidget(self)
         self.setCentralWidget(centralWidget)
 
-        # Layout principal
+        # Main layout
         self.globalLayout = QVBoxLayout(centralWidget)
 
-        # Criar gráfico
+        # Create graph widget
         self.graphWidget = pg.PlotWidget()
         self.globalLayout.addWidget(self.graphWidget)
 
-        # Layout de opções
+        # Options layout
         self.optionsLayout = QHBoxLayout()
 
-        # Layout de entrada
+        # Input layout
         self.inputLayout = QVBoxLayout()
-        self.label = QLabel('Intervalo de aquisição (ms):')
+        self.label = QLabel('Acquisition interval (ms):')
         self.inputLayout.addWidget(self.label)
         self.inputInterval = QLineEdit()
-        self.inputInterval.setText("1000")  # Intervalo padrão: 1 segundo
+        self.inputInterval.setText("1000")  # Default interval: 1 second
         self.inputLayout.addWidget(self.inputInterval)
         self.optionsLayout.addLayout(self.inputLayout)
 
-        # Layout de botões
+        # Buttons layout
         self.buttonLayout = QVBoxLayout()
 
-        # Botão de iniciar/parar aquisição automática
-        self.toggleButton = QPushButton('Iniciar Aquisição', self)
+        # Start/Stop acquisition button
+        self.toggleButton = QPushButton('Start Acquisition', self)
         self.toggleButton.clicked.connect(self.toggleAcquisition)
         self.buttonLayout.addWidget(self.toggleButton)
 
-        # Botão de limpar gráfico
-        self.clearButton = QPushButton('Limpar Gráfico', self)
+        # Clear graph button
+        self.clearButton = QPushButton('Clear Graph', self)
         self.clearButton.clicked.connect(self.clearGraph)
         self.buttonLayout.addWidget(self.clearButton)
 
@@ -62,39 +62,39 @@ class MainWindow(QMainWindow):
 
     def initSerial(self):
         try:
-            self.ser = serial.Serial('/dev/ttyUSB0', 38400, timeout=1)  # AJUSTAR PARA PORTA CERTA
-            time.sleep(2)  # Espera para estabilizar conexão
+            self.ser = serial.Serial('COM5', 38400, timeout=1)  # ADJUST TO THE CORRECT PORT
+            time.sleep(2)  # Wait for the connection to stabilize
         except serial.SerialException:
-            QMessageBox.critical(self, 'Erro de Conexão', 'Não foi possível abrir a porta serial.')
+            QMessageBox.critical(self, 'Connection Error', 'Failed to open serial port.')
             sys.exit()
 
     def toggleAcquisition(self):
         if self.timer.isActive():
             self.timer.stop()
-            self.toggleButton.setText('Iniciar Aquisição')
+            self.toggleButton.setText('Start Acquisition')
         else:
             try:
                 interval = int(self.inputInterval.text())
-                self.timer.start(interval)  # Inicia a aquisição automática
-                self.toggleButton.setText('Parar Aquisição')
+                self.timer.start(interval)  # Start automatic acquisition
+                self.toggleButton.setText('Stop Acquisition')
             except ValueError:
-                QMessageBox.warning(self, 'Erro', 'Por favor, insira um número válido.')
+                QMessageBox.warning(self, 'Error', 'Please enter a valid number.')
 
     def requestData(self):
-        self.ser.write(b'GET\n')  # Enviar comando GET para o Arduino
+        self.ser.write(b'GET\n')  # Send GET command to Arduino
 
     def read_from_arduino(self):
         while self.ser.in_waiting > 0:
             try:
                 line = self.ser.readline().decode('utf-8').strip()
                 if line == "ERROR":
-                    print("Comando inválido recebido pelo Arduino!")
+                    print("Invalid command received by Arduino!")
                 else:
                     value, timestamp = map(int, line.split(','))
-                    print(f"Valor: {value}, Tempo: {timestamp}ms")
+                    print(f"Value: {value}, Time: {timestamp}ms")
                     self.graphWidget.plot([timestamp], [value], pen='r', symbol='o')
             except Exception as e:
-                print("Erro ao ler dados:", e)
+                print("Error reading data:", e)
 
     def clearGraph(self):
         self.graphWidget.clear()
@@ -108,3 +108,4 @@ if __name__ == '__main__':
     app = QApplication(sys.argv)
     window = MainWindow()
     sys.exit(app.exec_())
+
