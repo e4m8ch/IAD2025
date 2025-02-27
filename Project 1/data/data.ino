@@ -12,7 +12,7 @@ void loop() {
 
     if (command == "GET") {  // Process only if the command is "GET"
       // int value = analogRead(A0);  // Read the analog value from pin A0
-      int value = random(0, 1024);  // Generate a random value between 0 and 1023
+      int value = random(0, 1024);  // Generate a random value between 0 and 1023 (to test)
       Serial.println(String(value) + ", " + String(millis()));  // Send value and timestamp
     } else {
       Serial.println("ERROR");  // Send an error message if the command is invalid
