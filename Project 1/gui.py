@@ -6,6 +6,10 @@ from PyQt5.QtWidgets import QApplication, QMainWindow, QPushButton, QVBoxLayout,
 from PyQt5.QtCore import QTimer
 import pyqtgraph as pg
 
+# -----------------------------------------------------------------------------------------------------
+# --------------------------------------------- UI ----------------------------------------------------
+# -----------------------------------------------------------------------------------------------------
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -32,23 +36,28 @@ class MainWindow(QMainWindow):
         self.graphWidget = pg.PlotWidget()
         self.globalLayout.addWidget(self.graphWidget)
 
-        # Options layout
+        # Options layout (input and buttons, everything bellow the graph)
         self.optionsLayout = QHBoxLayout()
 
-        # Input layout
+        # Input layout (interval and set interval button, as well as the label)
         self.inputLayout = QVBoxLayout()
+        # Label
         self.label = QLabel('Interval between each acquisition (ms):')
         self.inputLayout.addWidget(self.label)
 
+        # Layout to place the QLineEdit and QPushButton together, inside the input layout
         self.intervalLayout = QHBoxLayout()
+        # Input field for the sampling interval, with default value of 100ms
         self.inputInterval = QLineEdit()
         self.inputInterval.setText("100")
         self.intervalLayout.addWidget(self.inputInterval)
 
+        # Button to set the sampling interval
         self.intervalButton = QPushButton('Set interval', self)
         self.intervalButton.clicked.connect(self.sendInterval)
         self.intervalLayout.addWidget(self.intervalButton)
 
+        # Add the interval layout to the input layout, and the input layout to the options layout
         self.inputLayout.addLayout(self.intervalLayout)
         self.optionsLayout.addLayout(self.inputLayout)
 
@@ -65,51 +74,78 @@ class MainWindow(QMainWindow):
         self.clearButton.clicked.connect(self.clearGraph)
         self.buttonLayout.addWidget(self.clearButton)
 
+        # Add the button layout to the options layout and the options layout to the global layout
         self.optionsLayout.addLayout(self.buttonLayout)
         self.globalLayout.addLayout(self.optionsLayout)
 
+        # Show the window
         self.show()
 
+    # -----------------------------------------------------------------------------------------------------
+    # -------------------------------------- Functions ----------------------------------------------------
+    # -----------------------------------------------------------------------------------------------------
+
+    # Starts the serial communication with the Arduino. If the port is not found, a message box is shown and the program exits.
     def initSerial(self):
         try:
-            self.ser = serial.Serial('COM4', 38400, timeout=1)  # ADJUST TO THE CORRECT PORT
-            time.sleep(2)  # Wait for the connection to stabilize
+            # ADJUST TO THE CORRECT PORT! IF YOU ARE USING WINDOWS, IT WILL BE 'COMX', WHERE X IS THE PORT NUMBER
+            # IF YOU ARE USING LINUX, IT WILL BE '/dev/ttyUSBX', WHERE X IS THE PORT NUMBER!!!
+            self.ser = serial.Serial('COM4', 38400, timeout=1)  
+            # Wait for the Arduino to reset
+            time.sleep(2) 
         except serial.SerialException:
             QMessageBox.critical(self, 'Connection Error', 'Failed to open serial port.')
             sys.exit()
 
+    # Function to start/stop the acquisition
     def toggleAcquisition(self):
+        # Checks if the timer is active (if it is, the acquisition is running)
         if self.timer.isActive():
+            # If it is, stop the timer and change the button text
             self.timer.stop()
             self.toggleButton.setText('Start Acquisition')
+
+            # Send the stop command to the Arduino, making it stop sending data
             try:
                 command = f"STOP\n"
                 self.ser.write(command.encode('utf-8'))
                 print(f"Sent: {command.strip()}")  # Debugging output
             except ValueError:
                 QMessageBox.warning(self, 'Error', 'Please try a valid command.')
+
+        # If the timer is not active, start the acquisition
         else:
             try:
+                # Checks the interval value written by the user and starts the timer with that interval
                 interval = int(self.inputInterval.text())
-                self.timer.start(interval)  # Start automatic acquisition
+                self.timer.start(interval)
+
+                #Changes the button text
                 self.toggleButton.setText('Stop Acquisition')
+                
+                # Send the start command to the Arduino, making it start sending data
                 command = f"GET\n"
                 self.ser.write(command.encode('utf-8')) 
                 print(f"Sent: {command.strip()}")  # Debugging output
+
             except ValueError:
                 QMessageBox.warning(self, 'Error', 'Please enter a valid number.')
 
+    # Function to send the interval to the Arduino
     def sendInterval(self):
         try:
+            # Checks the interval value written by the user and sends it to the Arduino, along with SET_INTERVAL for identification
             interval = int(self.inputInterval.text().strip())
             self.timer.setInterval(interval)
-            command = f"SET_INTERVAL {interval}\n"  # Format properly
-            self.ser.write(command.encode('utf-8'))  # Send to Arduino
-            print(f"Sent: {command.strip()}")  # Debugging output
+            command = f"SET_INTERVAL {interval}\n"
+            self.ser.write(command.encode('utf-8')) 
+            print(f"Sent: {command.strip()}") # Debugging output
+
         except ValueError:
             QMessageBox.warning(self, 'Error', 'Please enter a valid number.')
 
     """
+    # This was our original data requesting function. Might be useful later, so it's still here
     def requestData(self):
         try:
             command = f"GET\n"  # Format properly
@@ -119,26 +155,45 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, 'Error', 'Please enter a valid number.')
     """
 
+    # Function to read data from the Arduino and plot it on the graph
     def read_from_arduino(self):
         while self.ser.in_waiting > 0:
             try:
+                # Decodes the data sent by the arduino to the serial port
                 line = self.ser.readline().decode('utf-8').strip()
+
+                # If the arduino sends an ERROR message, print it
                 if line == "ERROR":
                     print("Invalid command received by Arduino!")
+
+                # Otherwise, grab the data and map it into a value and a timestamp (Sinse the data sent had the format "n, t")
                 else:
                     value, timestamp = map(int, line.split(','))
-                    print(f"Value: {value}, Time: {timestamp}ms")
+                    print(f"Value: {value}, Time: {timestamp}ms") # Prints data for debugging
+                    # Plot the data on the graph
                     self.graphWidget.plot([timestamp], [value], pen='r', symbol='o')
             except Exception as e:
                 print("Error reading data:", e)
 
+    # Function to clear the graph
     def clearGraph(self):
         self.graphWidget.clear()
+        try:
+            command = f"CLEAR\n"
+            self.ser.write(command.encode('utf-8'))
+            print(f"Sent: {command.strip()}")  # Debugging output
+        except ValueError:
+            QMessageBox.warning(self, 'Error', 'Please try a valid command.')
 
+    # Function to close the serial port when the window is closed
     def closeEvent(self, event):
         if hasattr(self, 'ser') and self.ser.is_open:
             self.ser.close()
         event.accept()
+
+# -----------------------------------------------------------------------------------------------------
+# --------------------------------------------- Main --------------------------------------------------
+# -----------------------------------------------------------------------------------------------------
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)

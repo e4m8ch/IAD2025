@@ -1,20 +1,31 @@
+// Variable declaration
 bool dataAcquisitionActive = false;
-int acquisitionInterval = 50;  // Default interval in milliseconds
+int acquisitionInterval = 50;
+unsigned long resetTime = 0;  
 
 void setup() {
-  Serial.begin(38400);  // Initialize serial communication at 38400 baud
-  pinMode(LED_BUILTIN, OUTPUT);  // Set built-in LED as output
+  // Initialize serial communication at 38400 baud
+  Serial.begin(38400);
 }
 
 void loop() {
   if (Serial.available() > 0) {
-    String command = Serial.readStringUntil('\n');  // Read the incoming command
-    command.trim();  // Remove any whitespace
 
-    // Start acquisition
-    if (command == "GET") {
+    // Read the incoming command and remove whitespace
+    String command = Serial.readStringUntil('\n');
+    command.trim();
+
+    // Stop acquisition if the incoming command is STOP
+    if (command == "STOP") {  
+      dataAcquisitionActive = false;  
+    } 
+
+    // Start acquisition if the incoming command is GET
+    else if (command == "GET") {
       dataAcquisitionActive = true;  
     }
+
+    // Set the interval to what was sent by the user if the incoming command is SET_INTERVAL
     else if (command.startsWith("SET_INTERVAL")) {
       // Remove the string, keeping only the interval integer
       command.replace("SET_INTERVAL", "");  
@@ -29,10 +40,12 @@ void loop() {
         }
       }
     }
-    // Stop acquisition
-    else if (command == "STOP") {  
+
+    // Restarts the timer is the incoming command is CLEAR
+    else if (command == "CLEAR") {
       dataAcquisitionActive = false;  
-    } 
+      resetTime = millis();
+    }
     // Invalid command
     else {
       Serial.println("ERROR");  
@@ -42,7 +55,7 @@ void loop() {
   if (dataAcquisitionActive) {
     // Read the analog value from pin A0 and send it along with the current timestamp
     int value = analogRead(A0);  
-    Serial.println(String(value) + ", " + String(millis()));
+    Serial.println(String(value) + ", " + String(millis() - resetTime));
     // Wait before next reading
     delay(acquisitionInterval);
   }
