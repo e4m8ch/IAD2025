@@ -12,8 +12,10 @@ class MainWindow(QMainWindow):
         self.title = 'Data Acquisition - Raspberry Pi'
         self.initUI()
         self.initSerial()
+        # Creates timer (for data reading)
         self.timer = QTimer(self)
-        self.timer.timeout.connect(self.requestData)  # Timer to automatically send commands
+        # Sets a function to be called every time the timer times out
+        self.timer.timeout.connect(self.read_from_arduino) 
 
     def initUI(self):
         self.setWindowTitle(self.title)
@@ -35,11 +37,19 @@ class MainWindow(QMainWindow):
 
         # Input layout
         self.inputLayout = QVBoxLayout()
-        self.label = QLabel('Acquisition interval (ms):')
+        self.label = QLabel('Interval between each acquisition (ms):')
         self.inputLayout.addWidget(self.label)
+
+        self.intervalLayout = QHBoxLayout()
         self.inputInterval = QLineEdit()
-        self.inputInterval.setText("1000")  # Default interval: 1 second
-        self.inputLayout.addWidget(self.inputInterval)
+        self.inputInterval.setText("100")
+        self.intervalLayout.addWidget(self.inputInterval)
+
+        self.intervalButton = QPushButton('Set interval', self)
+        self.intervalButton.clicked.connect(self.sendInterval)
+        self.intervalLayout.addWidget(self.intervalButton)
+
+        self.inputLayout.addLayout(self.intervalLayout)
         self.optionsLayout.addLayout(self.inputLayout)
 
         # Buttons layout
@@ -62,7 +72,7 @@ class MainWindow(QMainWindow):
 
     def initSerial(self):
         try:
-            self.ser = serial.Serial('COM5', 38400, timeout=1)  # ADJUST TO THE CORRECT PORT
+            self.ser = serial.Serial('COM4', 38400, timeout=1)  # ADJUST TO THE CORRECT PORT
             time.sleep(2)  # Wait for the connection to stabilize
         except serial.SerialException:
             QMessageBox.critical(self, 'Connection Error', 'Failed to open serial port.')
@@ -72,16 +82,42 @@ class MainWindow(QMainWindow):
         if self.timer.isActive():
             self.timer.stop()
             self.toggleButton.setText('Start Acquisition')
+            try:
+                command = f"STOP\n"
+                self.ser.write(command.encode('utf-8'))
+                print(f"Sent: {command.strip()}")  # Debugging output
+            except ValueError:
+                QMessageBox.warning(self, 'Error', 'Please try a valid command.')
         else:
             try:
                 interval = int(self.inputInterval.text())
                 self.timer.start(interval)  # Start automatic acquisition
                 self.toggleButton.setText('Stop Acquisition')
+                command = f"GET\n"
+                self.ser.write(command.encode('utf-8')) 
+                print(f"Sent: {command.strip()}")  # Debugging output
             except ValueError:
                 QMessageBox.warning(self, 'Error', 'Please enter a valid number.')
 
+    def sendInterval(self):
+        try:
+            interval = int(self.inputInterval.text().strip())
+            self.timer.setInterval(interval)
+            command = f"SET_INTERVAL {interval}\n"  # Format properly
+            self.ser.write(command.encode('utf-8'))  # Send to Arduino
+            print(f"Sent: {command.strip()}")  # Debugging output
+        except ValueError:
+            QMessageBox.warning(self, 'Error', 'Please enter a valid number.')
+
+    """
     def requestData(self):
-        self.ser.write(b'GET\n')  # Send GET command to Arduino
+        try:
+            command = f"GET\n"  # Format properly
+            self.ser.write(command.encode('utf-8'))  # Send to Arduino
+            print(f"Sent: {command.strip()}")  # Debugging output
+        except ValueError:
+            QMessageBox.warning(self, 'Error', 'Please enter a valid number.')
+    """
 
     def read_from_arduino(self):
         while self.ser.in_waiting > 0:
