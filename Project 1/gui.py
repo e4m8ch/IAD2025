@@ -6,6 +6,9 @@ from PyQt5.QtWidgets import QApplication, QMainWindow, QPushButton, QVBoxLayout,
 from PyQt5.QtCore import QTimer
 import pyqtgraph as pg
 
+#define global limits
+MAX_POINTS = 1e4  # Maximum number of points to display
+
 # -----------------------------------------------------------------------------------------------------
 # --------------------------------------------- UI ----------------------------------------------------
 # -----------------------------------------------------------------------------------------------------
@@ -19,7 +22,7 @@ class MainWindow(QMainWindow):
         # Creates timer (for data reading)
         self.timer = QTimer(self)
         # Sets a function to be called every time the timer times out
-        self.timer.timeout.connect(self.read_from_arduino) 
+        self.timer.timeout.connect(self.read_from_arduino)
 
     def initUI(self):
         self.setWindowTitle(self.title)
@@ -90,7 +93,7 @@ class MainWindow(QMainWindow):
         try:
             # ADJUST TO THE CORRECT PORT! IF YOU ARE USING WINDOWS, IT WILL BE 'COMX', WHERE X IS THE PORT NUMBER
             # IF YOU ARE USING LINUX, IT WILL BE '/dev/ttyUSBX', WHERE X IS THE PORT NUMBER!!!
-            self.ser = serial.Serial('COM4', 38400, timeout=1)  
+            self.ser = serial.Serial('COM7', 38400, timeout=1)  
             # Wait for the Arduino to reset
             time.sleep(2) 
         except serial.SerialException:
@@ -155,30 +158,49 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, 'Error', 'Please enter a valid number.')
     """
 
+
     # Function to read data from the Arduino and plot it on the graph
     def read_from_arduino(self):
+        # Initialize lists if not already present
+        if not hasattr(self, "timestamps"):
+            self.timestamps = []
+            self.values = []
+
         while self.ser.in_waiting > 0:
             try:
-                # Decodes the data sent by the arduino to the serial port
+                # Read and decode data from Arduino
                 line = self.ser.readline().decode('utf-8').strip()
 
-                # If the arduino sends an ERROR message, print it
                 if line == "ERROR":
                     print("Invalid command received by Arduino!")
-
-                # Otherwise, grab the data and map it into a value and a timestamp (Sinse the data sent had the format "n, t")
                 else:
                     value, timestamp = map(int, line.split(','))
-                    print(f"Value: {value}, Time: {timestamp}ms") # Prints data for debugging
-                    # Plot the data on the graph
-                    self.graphWidget.plot([timestamp], [value], pen='r', symbol='o')
+                    print(f"Value: {value}, Time: {timestamp}ms")  # Debugging
+
+                    # Append new data
+                    self.timestamps.append(timestamp)
+                    self.values.append(value)
+
+                    # Keep only the last MAX_POINTS to avoid crashes
+                    if len(self.timestamps) > MAX_POINTS:
+                        self.timestamps.pop(0)
+                        self.values.pop(0)
+
+                    # Clear the graph and replot only the latest data
+                    self.graphWidget.clear()
+                    self.graphWidget.plot(self.timestamps, self.values, pen='r', symbol='o')
+
             except Exception as e:
                 print("Error reading data:", e)
+
 
     # Function to clear the graph
     def clearGraph(self):
         self.graphWidget.clear()
+        self.timestamps = []
+        self.values = []
         try:
+            self.ser.reset_input_buffer()  # Clears incoming data buffer
             command = f"CLEAR\n"
             self.ser.write(command.encode('utf-8'))
             print(f"Sent: {command.strip()}")  # Debugging output
