@@ -1,3 +1,9 @@
+# -----------------------------------------------------------------------------------------------------
+# ---------------------- INSTRUMENTATION AND DATA ACQUISITION PROJECT 1 -------------------------------
+# ------------------------ 106661, Joana Vaz - 106643, José Machado -----------------------------------
+# ------------------------ 105908, Rita Garcia - 106197, Rui Costa ------------------------------------
+# -----------------------------------------------------------------------------------------------------
+
 import sys
 import serial
 import time
@@ -6,8 +12,8 @@ from PyQt5.QtWidgets import QApplication, QMainWindow, QPushButton, QVBoxLayout,
 from PyQt5.QtCore import QTimer
 import pyqtgraph as pg
 
-#define global limits
-MAX_POINTS = 1e4  # Maximum number of points to display
+# Maximum number of points to display
+MAX_POINTS = 1e4  
 
 # -----------------------------------------------------------------------------------------------------
 # --------------------------------------------- UI ----------------------------------------------------
@@ -196,14 +202,16 @@ class MainWindow(QMainWindow):
 
     # Function to clear the graph
     def clearGraph(self):
+        # clears the graph and the data lists
         self.graphWidget.clear()
         self.timestamps = []
         self.values = []
         try:
-            self.ser.reset_input_buffer()  # Clears incoming data buffer
+            # Clears incoming data buffer
+            self.ser.reset_input_buffer()  
             command = f"CLEAR\n"
             self.ser.write(command.encode('utf-8'))
-            print(f"Sent: {command.strip()}")  # Debugging output
+            print(f"Sent: {command.strip()}")
         except ValueError:
             QMessageBox.warning(self, 'Error', 'Please try a valid command.')
 
