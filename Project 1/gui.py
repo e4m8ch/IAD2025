@@ -153,18 +153,6 @@ class MainWindow(QMainWindow):
         except ValueError:
             QMessageBox.warning(self, 'Error', 'Please enter a valid number.')
 
-    """
-    # This was our original data requesting function. Might be useful later, so it's still here
-    def requestData(self):
-        try:
-            command = f"GET\n"  # Format properly
-            self.ser.write(command.encode('utf-8'))  # Send to Arduino
-            print(f"Sent: {command.strip()}")  # Debugging output
-        except ValueError:
-            QMessageBox.warning(self, 'Error', 'Please enter a valid number.')
-    """
-
-
     # Function to read data from the Arduino and plot it on the graph
     def read_from_arduino(self):
         # Initialize lists if not already present
