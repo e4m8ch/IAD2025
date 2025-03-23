@@ -1,8 +1,3 @@
-# Python code for Multiple Color Detection 
-# gotten from https://www.geeksforgeeks.org/multiple-color-detection-in-real-time-using-python-opencv/
-
-# To alter to get data from raspberry camera, detect color, output color position in one of three zones
-# and send data to arduino to control robot movement
 from picamera2 import Picamera2
 import cv2
 import numpy as np
@@ -13,6 +8,14 @@ picam2.preview_configuration.main.size = (640, 480)
 picam2.preview_configuration.main.format = "RGB888"
 picam2.configure("preview")
 picam2.start()
+
+# Define frame width and split into 4 vertical zones
+frame_width = 640
+zone_width = frame_width // 4  # Each section is frame_width / 4
+
+def get_zone(x):
+    """Returns the zone (0-3) based on x-coordinate."""
+    return x // zone_width  # Integer division to get the zone index
 
 while True:
     frame = picam2.capture_array()
@@ -25,58 +28,47 @@ while True:
     hsvFrame = cv2.cvtColor(frame, cv2.COLOR_RGB2HSV)
 
     # Define color ranges
-    red_lower = np.array([110, 70, 90], np.uint8)
-    red_upper = np.array([200, 255, 255], np.uint8)
-    red_mask = cv2.inRange(hsvFrame, red_lower, red_upper)
-    
-    green_lower = np.array([25, 52, 72], np.uint8)
-    green_upper = np.array([102, 255, 255], np.uint8)
-    green_mask = cv2.inRange(hsvFrame, green_lower, green_upper)
+    color_ranges = {
+        "Red": ([110, 70, 90], [200, 255, 255], (0, 0, 255)),  # Red color in BGR
+        "Green": ([90, 70, 90], [102, 255, 255], (0, 255, 0)),  # Green color in BGR
+        "Blue": ([0, 126, 65], [92, 240, 171], (255, 0, 0)),   # Blue color in BGR
+    }
 
-    blue_lower = np.array([90, 50, 50], np.uint8)  # Lower bound of blue in HSV
-    blue_upper = np.array([130, 255, 255], np.uint8)  # Upper bound of blue in HSV
-    blue_mask = cv2.inRange(hsvFrame, blue_lower, blue_upper)
+    detected_positions = {0: None, 1: None, 2: None, 3: None}
 
-    # Morphological transformation
-    kernel = np.ones((5, 5), "uint8")
-    red_mask = cv2.dilate(red_mask, kernel)
-    green_mask = cv2.dilate(green_mask, kernel)
-    blue_mask = cv2.dilate(blue_mask, kernel)
+    for color_name, (lower, upper, bgr) in color_ranges.items():
+        # Convert to numpy arrays
+        lower_bound = np.array(lower, np.uint8)
+        upper_bound = np.array(upper, np.uint8)
 
-    # Apply masks
-    res_red = cv2.bitwise_and(frame, frame, mask=red_mask)
-    res_green = cv2.bitwise_and(frame, frame, mask=green_mask)
-    res_blue = cv2.bitwise_and(frame, frame, mask=blue_mask)
+        # Create color mask
+        mask = cv2.inRange(hsvFrame, lower_bound, upper_bound)
 
-    # Red color detection and drawing bounding boxes
-    contours, _ = cv2.findContours(red_mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-    for contour in contours:
-        area = cv2.contourArea(contour)
-        if area > 300:  # Adjust area threshold as needed
-            x, y, w, h = cv2.boundingRect(contour)
-            # Draw rectangle on the frame
-            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 0, 255), 2)  # Red color (BGR)
-            cv2.putText(frame, "Red Colour", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2)
+        # Morphological transformation
+        kernel = np.ones((5, 5), "uint8")
+        mask = cv2.dilate(mask, kernel)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)  # Removes small noise
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
 
-    # Repeat for green and blue
-    contours, _ = cv2.findContours(green_mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-    for contour in contours:
-        area = cv2.contourArea(contour)
-        if area > 300:
-            x, y, w, h = cv2.boundingRect(contour)
-            # Draw rectangle on the frame
-            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)  # Green color (BGR)
-            cv2.putText(frame, "Green Colour", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
+        # Detect contours
+        contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
-    contours, _ = cv2.findContours(blue_mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-    for contour in contours:
-        area = cv2.contourArea(contour)
-        if area > 300:
-            x, y, w, h = cv2.boundingRect(contour)
-            # Draw rectangle on the frame
-            cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 2)  # Blue color (BGR)
-            cv2.putText(frame, "Blue Colour", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 0, 0), 2)
+        for contour in contours:
+            area = cv2.contourArea(contour)
+            if area > 300:  # Ignore small noise
+                x, y, w, h = cv2.boundingRect(contour)
+                zone = get_zone(x)  # Determine which section the object is in
+                
+                # Store detected color in the corresponding section
+                detected_positions[zone] = color_name
+                
+                # Draw bounding box and label
+                cv2.rectangle(frame, (x, y), (x + w, y + h), bgr, 2)
+                cv2.putText(frame, f"{color_name} ({zone})", (x, y - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, bgr, 2)
 
+    # Print detected positions
+    print(f"Detected Positions: {detected_positions}")
 
     # Show the frame
     cv2.imshow("Camera Feed", frame)
