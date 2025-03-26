@@ -1,92 +1,166 @@
+import sys
+from PyQt5.QtGui import *
+from PyQt5.QtWidgets import *
+from PyQt5.QtCore import *
 import cv2
-import numpy as np
-import tkinter as tk
-from tkinter import Label, Button
-from PIL import Image, ImageTk
 from picamera2 import Picamera2
+import numpy as np
+import serial  # Import the pyserial library
 
-# Initialize Tkinter window
-root = tk.Tk()
-root.title("Color Detection GUI")
-root.geometry("800x600")
+class MainWindow(QWidget):
+    def __init__(self):
+        super(MainWindow, self).__init__()
 
-# Initialize Picamera2
-picam2 = Picamera2()
-picam2.preview_configuration.main.size = (640, 480)
-picam2.preview_configuration.main.format = "RGB888"
-picam2.configure("preview")
-picam2.start()
+        self.VBL = QVBoxLayout()
 
-# Define frame width and split into 4 quadrants
-frame_width = 640
-zone_width = frame_width // 4  # Each section is frame_width / 4
+        self.FeedLabel = QLabel()
+        self.VBL.addWidget(self.FeedLabel)
 
-def get_zone(x):
-    """Returns the zone (0-3) based on x-coordinate."""
-    return x // zone_width
+        self.buttonLayout = QHBoxLayout()
 
-detected_positions = {"Red": [], "Green": [], "Blue": []}
+        self.redButton = QPushButton("Red")
+        self.redButton.clicked.connect(self.onRedButtonClick)
+        self.buttonLayout.addWidget(self.redButton)
+        
+        self.greenButton = QPushButton("Green")
+        self.greenButton.clicked.connect(self.onGreenButtonClick)
+        self.buttonLayout.addWidget(self.greenButton)
+        
+        self.blueButton = QPushButton("Blue")
+        self.blueButton.clicked.connect(self.onBlueButtonClick)
+        self.buttonLayout.addWidget(self.blueButton)
+        
+        self.yellowButton = QPushButton("Yellow")
+        self.yellowButton.clicked.connect(self.onYellowButtonClick)
+        self.buttonLayout.addWidget(self.yellowButton)
 
-# Define color ranges
-color_ranges = {
-    "Red": ([110, 70, 90], [200, 255, 255], (0, 0, 255)),
-    "Green": ([90, 70, 90], [102, 255, 255], (0, 255, 0)),
-    "Blue": ([0, 126, 65], [92, 240, 171], (255, 0, 0)),
-}
+        self.VBL.addLayout(self.buttonLayout)
 
-# Tkinter Label to display camera feed
-label = Label(root)
-label.pack()
+        self.CancelBTN = QPushButton("Cancel Camera Feed")
+        self.CancelBTN.clicked.connect(self.CancelFeed)
+        self.VBL.addWidget(self.CancelBTN)
 
-def update_frame():
-    global detected_positions
-    frame = picam2.capture_array()
-    if frame is None:
-        return
+        # Initialize worker and pass reference to self
+        self.Worker1 = Worker1(self)  # Pass `self` (MainWindow) to the worker
+        self.Worker1.start()
+        self.Worker1.ImageUpdate.connect(self.ImageUpdateSlot)
 
-    hsvFrame = cv2.cvtColor(frame, cv2.COLOR_RGB2HSV)
-    detected_positions = {"Red": [], "Green": [], "Blue": []}
+        # Initialize serial connection (replace with your actual Arduino port)
+        self.arduino = serial.Serial('/dev/ttyACM0', 9600)  # Adjust the port name as needed
 
-    for color_name, (lower, upper, bgr) in color_ranges.items():
-        lower_bound = np.array(lower, np.uint8)
-        upper_bound = np.array(upper, np.uint8)
-        mask = cv2.inRange(hsvFrame, lower_bound, upper_bound)
-        contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-        for contour in contours:
-            if cv2.contourArea(contour) > 300:
-                x, y, w, h = cv2.boundingRect(contour)
-                zone = get_zone(x)
-                if zone not in detected_positions[color_name]:
-                    detected_positions[color_name].append(zone)
-                cv2.rectangle(frame, (x, y), (x + w, y + h), bgr, 2)
-                cv2.putText(frame, f"{color_name} ({zone})", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, bgr, 2)
+        self.setLayout(self.VBL)
+
+    def ImageUpdateSlot(self, Image):
+        self.FeedLabel.setPixmap(QPixmap.fromImage(Image))
+
+    def CancelFeed(self):
+        self.Worker1.stop()
+
+    def sendColorToArduino(self, color_regions):
+        """Send detected color regions to Arduino via serial."""
+        message = f"[{','.join(map(str, color_regions))}]\n"
+        self.arduino.write(message.encode())  # Send the message to Arduino
+        print(message)
     
-    frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-    img = Image.fromarray(frame)
-    imgtk = ImageTk.PhotoImage(image=img)
-    label.imgtk = imgtk
-    label.configure(image=imgtk)
-    root.after(10, update_frame)
+    def onRedButtonClick(self):
+        color_regions = self.Worker1.getColorRegions("Red")
+        self.sendColorToArduino(color_regions)
 
-def check_color(color):
-    quadrants = detected_positions[color]
-    print(f"{color} detected in quadrants: {quadrants}")
+    def onGreenButtonClick(self):
+        color_regions = self.Worker1.getColorRegions("Green")
+        self.sendColorToArduino(color_regions)
 
-# Buttons for color selection
-button_frame = tk.Frame(root)
-button_frame.pack()
+    def onBlueButtonClick(self):
+        color_regions = self.Worker1.getColorRegions("Blue")
+        self.sendColorToArduino(color_regions)
 
-btn_red = Button(button_frame, text="Red", command=lambda: check_color("Red"))
-btn_red.pack(side=tk.LEFT, padx=10)
+    def onYellowButtonClick(self):
+        color_regions = self.Worker1.getColorRegions("Yellow")
+        self.sendColorToArduino(color_regions)
 
-btn_green = Button(button_frame, text="Green", command=lambda: check_color("Green"))
-btn_green.pack(side=tk.LEFT, padx=10)
 
-btn_blue = Button(button_frame, text="Blue", command=lambda: check_color("Blue"))
-btn_blue.pack(side=tk.LEFT, padx=10)
 
-# Start camera feed loop
-update_frame()
 
-# Run Tkinter main loop
-root.mainloop()
+class Worker1(QThread):
+    ImageUpdate = pyqtSignal(QImage)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)  # Pass the parent (MainWindow) to the QThread constructor
+        self.color_regions = {
+            "Red": [],
+            "Green": [],
+            "Blue": [],
+            "Yellow": []
+        }
+        self.colorToDetect = None
+        self.parent = parent  # Save the reference to the MainWindow instance
+
+    def run(self):
+        self.ThreadActive = True
+        picam2 = Picamera2()
+        config = picam2.create_preview_configuration(main={"size": (640, 480), "format": "RGB888"})
+        picam2.configure(config)
+        picam2.start()
+
+        while self.ThreadActive:
+            frame = picam2.capture_array()
+            CorrectedImage = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)  # Correct color channels
+
+            hsvFrame = cv2.cvtColor(CorrectedImage, cv2.COLOR_BGR2HSV)
+
+            # Define color ranges (FIXED: swapped Red and Blue)
+            color_ranges = {
+                "Red": ([110, 70, 90], [200, 255, 255], (255, 0, 0)),  # Corrected Red in BGR
+                "Green": ([90, 70, 90], [102, 255, 255], (0, 255, 0)),  # Green in BGR
+                "Blue": ([0, 126, 65], [92, 240, 171], (0, 0, 255)),  # Corrected Blue in BGR
+                "Yellow": ([20, 100, 100], [30, 255, 255], (0, 255, 255))  # Yellow in BGR
+            }
+
+            # Reset color regions at each frame
+            for color in self.color_regions:
+                self.color_regions[color] = []
+
+            for color, (lower, upper, _) in color_ranges.items():
+                lower_bound = np.array(lower, np.uint8)
+                upper_bound = np.array(upper, np.uint8)
+
+                mask = cv2.inRange(hsvFrame, lower_bound, upper_bound)
+
+                kernel = np.ones((5, 5), "uint8")
+                mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+                mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+
+                contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+
+                for contour in contours:
+                    area = cv2.contourArea(contour)
+                    if area > 300:
+                        x, y, w, h = cv2.boundingRect(contour)
+                        # Draw bounding box only (no labels)
+                        cv2.rectangle(CorrectedImage, (x, y), (x + w, y + h), (0, 0, 255), 2)  # BGR color for bounding box
+                        # Store the region for the current color
+                        self.color_regions[color].append(1)  # Append '1' for each detected region
+
+            # Flip the image horizontally (left-right flip)
+            FlippedImage = cv2.flip(CorrectedImage, 1)  # Flip horizontally
+
+            # Convert to Qt format and update UI
+            ConvertToQtFormat = QImage(FlippedImage.data, FlippedImage.shape[1], FlippedImage.shape[0], QImage.Format_RGB888)
+            Pic = ConvertToQtFormat.scaled(640, 480, Qt.KeepAspectRatio)
+            self.ImageUpdate.emit(Pic)
+
+    def stop(self):
+        self.ThreadActive = False
+        self.quit()
+
+    def getColorRegions(self, color):
+        """Return the regions of the detected color."""
+        return self.color_regions.get(color, [])
+
+
+
+if __name__ == "__main__":
+    App = QApplication(sys.argv)
+    Root = MainWindow()
+    Root.show()
+    sys.exit(App.exec_())
