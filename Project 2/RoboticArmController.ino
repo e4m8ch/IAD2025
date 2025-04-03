@@ -51,41 +51,112 @@ void moveServo(int pin, int angle) {
   }
 }
 
-//open claw, move down, grab
-void moveDown(){
-  moveServo(3,50);
-  moveServo(6,80);
-  moveServo(6,30);
-  moveServo(5,-80);
-  moveServo(6,30);
-  moveServo(3,-50);
+void MoveDown(){
+  moveServo(3, 50);
+  while (currentCommand.active) processMovement();
+  moveServo(6, 50);
+  while (currentCommand.active) processMovement();
+  moveServo(6, 30);
+  while (currentCommand.active) processMovement();
+  moveServo(5, -50);
+  while (currentCommand.active) processMovement();
+  moveServo(5, -30);
+  while (currentCommand.active) processMovement();
+  moveServo(6, 30);
+  while (currentCommand.active) processMovement();
+  moveServo(5, -50);
+  while (currentCommand.active) processMovement();
+  moveServo(6, 35);
+  while (currentCommand.active) processMovement();
+  moveServo(3, -50);
+  while (currentCommand.active) processMovement();
 }
 
-//move up without opening claw
-void moveUp(){
-  moveServo(6,-30);
-  moveServo(5,80);
-  moveServo(6,-30);
-  moveServo(6,-80);
+void MoveDown3(){
+  moveServo(3, 50);
+  while (currentCommand.active) processMovement();
+  moveServo(6, 50);
+  while (currentCommand.active) processMovement();
+  moveServo(6, 30);
+  while (currentCommand.active) processMovement();
+  moveServo(5, -50);
+  while (currentCommand.active) processMovement();
+  moveServo(5, -30);
+  while (currentCommand.active) processMovement();
+  moveServo(6, 30);
+  while (currentCommand.active) processMovement();
+  moveServo(5, -50);
+  while (currentCommand.active) processMovement();
+  moveServo(6, 60);
+  while (currentCommand.active) processMovement();
+  moveServo(3, -50);
+  while (currentCommand.active) processMovement();
 }
 
-void gatherLeft(){
-  moveServo(4,35);
-  moveDown();
-  moveUp();
-  moveServo(4,-35);
+void MoveUp(){
+  moveServo(6, -35);
+  while (currentCommand.active) processMovement();
+  moveServo(5, 50);
+  while (currentCommand.active) processMovement();
+  moveServo(6, -30);
+  while (currentCommand.active) processMovement();
+  moveServo(5, 30);
+  while (currentCommand.active) processMovement();
+  moveServo(5, 50);
+  while (currentCommand.active) processMovement();
+  moveServo(6, -30);
+  while (currentCommand.active) processMovement();
+  moveServo(6, -50);
+  while (currentCommand.active) processMovement();
+  moveServo(4, 2);
+  while (currentCommand.active) processMovement();
+  moveServo(3, 50);
+  while (currentCommand.active) processMovement();
 }
 
-void gatherRight(){
-  moveServo(4,-35);
-  moveDown();
-  moveUp();
-  moveServo(4,35);
+void MoveUp3(){
+  moveServo(6, -60);
+  while (currentCommand.active) processMovement();
+  moveServo(5, 50);
+  while (currentCommand.active) processMovement();
+  moveServo(6, -30);
+  while (currentCommand.active) processMovement();
+  moveServo(5, 30);
+  while (currentCommand.active) processMovement();
+  moveServo(5, 50);
+  while (currentCommand.active) processMovement();
+  moveServo(6, -30);
+  while (currentCommand.active) processMovement();
+  moveServo(6, -50);
+  while (currentCommand.active) processMovement();
+  moveServo(4, 2);
+  while (currentCommand.active) processMovement();
+  moveServo(3, 50);
+  while (currentCommand.active) processMovement();
 }
 
-void gatherCenter(){
-  moveDown();
-  moveUp();
+void moveBox1() {
+  moveServo(4, -2);
+  while (currentCommand.active) processMovement();
+  MoveDown();
+  delay(1000);
+  MoveUp();
+}
+
+void moveBox2() {
+  moveServo(4, 20);
+  while (currentCommand.active) processMovement();
+  MoveDown();
+  delay(1000);
+  MoveUp();
+}
+
+void moveBox3() {
+  moveServo(4, 40);
+  while (currentCommand.active) processMovement();
+  MoveDown3();
+  delay(1000);
+  MoveUp();
 }
 
 void processMovement() {
@@ -137,6 +208,8 @@ void loop() {
   if (Serial.available()) {
     String command = Serial.readStringUntil('\n');
     command.trim();
+    Serial.print("Received: ");
+    Serial.println(command);
 
     if (command.startsWith("move(") && command.endsWith(")")) {
       int firstComma = command.indexOf(',');
@@ -155,14 +228,17 @@ void loop() {
           Serial.println("Invalid pin! Use pin 3, 4, 5, or 6.");
         }
       }
-    } else if (command == "gatherCenter") {
-      gatherCenter();
-    } else if (command == "gatherLeft") {
-      gatherLeft();
-    } else if (command == "gatherRight") {
-      gatherRight();
+    } else if (command.equals("moveBox1")) {
+      Serial.println("Executing moveBox1()");
+      moveBox1();
+    } else if (command.equals("moveBox2")) {
+      Serial.println("Executing moveBox2()");
+      moveBox2();
+    }else if (command.equals("moveBox3")) {
+      Serial.println("Executing moveBox3()");
+      moveBox3();
     } else {
-      Serial.println("Invalid command! Use format: move(pin, angle) or gatherCenter, gatherLeft, gatherRight");
+      Serial.println("Invalid command! Use format: move(pin, angle), gatherCenter, gatherLeft, gatherRight, or moveBox1");
     }
   }
 }
