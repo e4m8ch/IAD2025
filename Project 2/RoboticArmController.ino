@@ -16,55 +16,87 @@ ServoCommand currentCommand = {0, 0, false};
 unsigned long lastMoveTime = 0;
 const int moveInterval = 15; // Milliseconds per movement step
 
-// Function to get the correct servo object
 Servo* getServo(int pin) {
-  if (pin == 3) return &servo3;
-  if (pin == 4) return &servo4;
-  if (pin == 5) return &servo5;
-  if (pin == 6) return &servo6;
-  return nullptr;
-}
-
-// Function to get the reference position of a servo
-int* getServoPosition(int pin) {
-  if (pin == 3) return &position3;
-  if (pin == 4) return &position4;
-  if (pin == 5) return &position5;
-  if (pin == 6) return &position6;
-  return nullptr;
-}
-
-// Function to move a servo to zero smoothly
-void moveToZero(int pin) {
-  int* currentPosition = getServoPosition(pin);
-  if (currentPosition) {
-    currentCommand = {pin, 0, true}; // Set a command to move to 0°
+  switch (pin) {
+    case 3: return &servo3;
+    case 4: return &servo4;
+    case 5: return &servo5;
+    case 6: return &servo6;
+    default: return nullptr;
   }
 }
 
-// Function to queue a servo movement
+int* getServoPosition(int pin) {
+  switch (pin) {
+    case 3: return &position3;
+    case 4: return &position4;
+    case 5: return &position5;
+    case 6: return &position6;
+    default: return nullptr;
+  }
+}
+
+void moveToZero(int pin) {
+  int* currentPosition = getServoPosition(pin);
+  if (currentPosition) {
+    currentCommand = {pin, 0, true};
+  } else {
+    Serial.print("Error: Invalid pin in moveToZero: ");
+    Serial.println(pin);
+  }
+}
+
 void moveServo(int pin, int angle) {
   int* currentPosition = getServoPosition(pin);
   if (currentPosition) {
     int newPosition = constrain(*currentPosition + angle, 0, 180);
-    currentCommand = {pin, newPosition, true}; // Queue the command
+    currentCommand = {pin, newPosition, true};
+  } else {
+    Serial.print("Error: Invalid pin in moveServo: ");
+    Serial.println(pin);
   }
 }
 
-void MoveDown(){
+void processMovement() {
+  if (!currentCommand.active) return;
+
+  Servo* selectedServo = getServo(currentCommand.pin);
+  int* currentPosition = getServoPosition(currentCommand.pin);
+
+  if (!selectedServo || !currentPosition) {
+    Serial.println("Error: Invalid servo or position pointer in processMovement.");
+    currentCommand.active = false;
+    return;
+  }
+
+  unsigned long now = millis();
+  if (now - lastMoveTime >= moveInterval) {
+    lastMoveTime = now;
+
+    if (*currentPosition < currentCommand.targetPosition) {
+      (*currentPosition)++;
+    } else if (*currentPosition > currentCommand.targetPosition) {
+      (*currentPosition)--;
+    }
+
+    selectedServo->write(*currentPosition);
+
+    if (*currentPosition == currentCommand.targetPosition) {
+      currentCommand.active = false;
+    }
+  }
+}
+
+void MoveDown() {
   moveServo(3, 50);
   while (currentCommand.active) processMovement();
-  moveServo(6, 50);
+  moveServo(6, 80);
+  while (currentCommand.active) processMovement();
+  moveServo(5, -120);
   while (currentCommand.active) processMovement();
   moveServo(6, 30);
   while (currentCommand.active) processMovement();
-  moveServo(5, -50);
-  while (currentCommand.active) processMovement();
-  moveServo(5, -30);
-  while (currentCommand.active) processMovement();
-  moveServo(6, 30);
-  while (currentCommand.active) processMovement();
-  moveServo(5, -50);
+  moveServo(5, -120);
   while (currentCommand.active) processMovement();
   moveServo(6, 35);
   while (currentCommand.active) processMovement();
@@ -72,7 +104,7 @@ void MoveDown(){
   while (currentCommand.active) processMovement();
 }
 
-void MoveDown3(){
+void MoveDown3() {
   moveServo(3, 50);
   while (currentCommand.active) processMovement();
   moveServo(6, 50);
@@ -93,7 +125,7 @@ void MoveDown3(){
   while (currentCommand.active) processMovement();
 }
 
-void MoveUp(){
+void MoveUp() {
   moveServo(6, -35);
   while (currentCommand.active) processMovement();
   moveServo(5, 50);
@@ -114,7 +146,7 @@ void MoveUp(){
   while (currentCommand.active) processMovement();
 }
 
-void MoveUp3(){
+void MoveUp3() {
   moveServo(6, -60);
   while (currentCommand.active) processMovement();
   moveServo(5, 50);
@@ -141,6 +173,7 @@ void moveBox1() {
   MoveDown();
   delay(1000);
   MoveUp();
+  moveServo(4, 2);
 }
 
 void moveBox2() {
@@ -149,6 +182,7 @@ void moveBox2() {
   MoveDown();
   delay(1000);
   MoveUp();
+  moveServo(4, -20);
 }
 
 void moveBox3() {
@@ -157,32 +191,7 @@ void moveBox3() {
   MoveDown3();
   delay(1000);
   MoveUp();
-}
-
-void processMovement() {
-  if (!currentCommand.active) return; // No movement needed
-
-  Servo* selectedServo = getServo(currentCommand.pin);
-  int* currentPosition = getServoPosition(currentCommand.pin);
-  
-  if (!selectedServo || !currentPosition) return;
-
-  unsigned long now = millis();
-  if (now - lastMoveTime >= moveInterval) {
-    lastMoveTime = now;
-
-    if (*currentPosition < currentCommand.targetPosition) {
-      (*currentPosition)++;
-    } else if (*currentPosition > currentCommand.targetPosition) {
-      (*currentPosition)--;
-    }
-
-    selectedServo->write(*currentPosition);
-
-    if (*currentPosition == currentCommand.targetPosition) {
-      currentCommand.active = false; // Stop movement when target is reached
-    }
-  }
+  moveServo(4, -40);
 }
 
 void setup() {
@@ -193,17 +202,20 @@ void setup() {
   servo5.attach(5);
   servo6.attach(6);
 
-  // Move all servos to 0° at startup smoothly
   moveToZero(3);
+  delay(200);
   moveToZero(4);
+  delay(200);
   moveToZero(5);
+  delay(200);
   moveToZero(6);
+  
 
   Serial.println("Servos initialized. Use move(pin, angle) to move.");
 }
 
 void loop() {
-  processMovement(); // Continuously check if a servo needs movement
+  processMovement();
 
   if (Serial.available()) {
     String command = Serial.readStringUntil('\n');
@@ -227,6 +239,8 @@ void loop() {
         } else {
           Serial.println("Invalid pin! Use pin 3, 4, 5, or 6.");
         }
+      } else {
+        Serial.println("Malformed move command. Use move(pin, angle)");
       }
     } else if (command.equals("moveBox1")) {
       Serial.println("Executing moveBox1()");
@@ -234,16 +248,11 @@ void loop() {
     } else if (command.equals("moveBox2")) {
       Serial.println("Executing moveBox2()");
       moveBox2();
-    }else if (command.equals("moveBox3")) {
+    } else if (command.equals("moveBox3")) {
       Serial.println("Executing moveBox3()");
       moveBox3();
     } else {
-      Serial.println("Invalid command! Use format: move(pin, angle), gatherCenter, gatherLeft, gatherRight, or moveBox1");
+      Serial.println("Invalid command! Use move(pin, angle), moveBox1, moveBox2, or moveBox3.");
     }
   }
 }
-
-// 3 - Pinça (abre: positivo, fecha: negativo) [limit ±50°]
-// 4 - Rotação (positivo: anti-horário, negativo: horário) [limit ±90°]
-// 5 - Vertical (positivo: cima, negativo: baixo) [limit +100°] Começa no 0
-// 6 - Frente/trás (negativo:trás , positivo: frente) [mimit +180º] Começa no 0
