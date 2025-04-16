@@ -1,114 +1,117 @@
 import sys
 import serial
 import time
+import json
+import cv2
+import numpy as np
+from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
-from PyQt5.QtCore import *
-import cv2
+
 from picamera2 import Picamera2
-import numpy as np
-
-# -----------------------------------------------------------------------------------------------------
-# --------------------------------------------- UI ----------------------------------------------------
-# -----------------------------------------------------------------------------------------------------
-
+from libcamera import Transform
 
 class MainWindow(QWidget):
     def __init__(self):
-        super(MainWindow, self).__init__()
-        self.title = 'ARMS by Nintendo (2017)'
-        self.initUI()
+        super().__init__()
+        self.setWindowTitle("Camera Feed with Color Calibration")
         self.initSerial()
-
+        self.initUI()
+        
     def initUI(self):
+        self.setFixedSize(640, 480 + 200)
 
-        self.VBL = QVBoxLayout()
+        self.layout = QVBoxLayout(self)
+
+        self.colorSelector = QComboBox()
+        self.colorSelector.addItems(["Not Calibrating", "Red", "Green", "Blue", "Yellow"])
+        self.colorSelector.currentIndexChanged.connect(self.updateSlidersFromColor)
+        self.layout.addWidget(self.colorSelector)
+
+        self.saveButton = QPushButton("Save Calibration")
+        self.saveButton.clicked.connect(self.saveCalibration)
+        self.layout.addWidget(self.saveButton)
 
         self.FeedLabel = QLabel()
-        self.VBL.addWidget(self.FeedLabel)
+        self.layout.addWidget(self.FeedLabel)
 
-        self.CancelBTN = QPushButton("Cancel Camera Feed")
-        self.CancelBTN.clicked.connect(self.CancelFeed)
-        self.VBL.addWidget(self.CancelBTN)
+        self.sliders = {}
+        slider_layout = QGridLayout()
+        for i, name in enumerate(["H Lower", "S Lower", "V Lower", "H Upper", "S Upper", "V Upper"]):
+            label = QLabel(name)
+            slider = QSlider(Qt.Horizontal)
+            slider.setMaximum(255 if "H" not in name else 179)
+            slider.valueChanged.connect(self.updateColorRange)
+            self.sliders[name] = slider
+            slider_layout.addWidget(label, i, 0)
+            slider_layout.addWidget(slider, i, 1)
+        self.layout.addLayout(slider_layout)
 
-        self.buttonLayout = QHBoxLayout()
-
+        button_layout = QHBoxLayout()
         self.redButton = QPushButton("Red")
-        self.redButton.clicked.connect(self.onRedButtonClick)
-        self.buttonLayout.addWidget(self.redButton)
-        
+        self.redButton.clicked.connect(lambda: self.printSectors("Red"))
+        button_layout.addWidget(self.redButton)
         self.greenButton = QPushButton("Green")
-        self.greenButton.clicked.connect(self.onGreenButtonClick)
-        self.buttonLayout.addWidget(self.greenButton)
-        
+        self.greenButton.clicked.connect(lambda: self.printSectors("Green"))
+        button_layout.addWidget(self.greenButton)
         self.blueButton = QPushButton("Blue")
-        self.blueButton.clicked.connect(self.onBlueButtonClick)
-        self.buttonLayout.addWidget(self.blueButton)
-        
+        self.blueButton.clicked.connect(lambda: self.printSectors("Blue"))
+        button_layout.addWidget(self.blueButton)
         self.yellowButton = QPushButton("Yellow")
-        self.yellowButton.clicked.connect(self.onYellowButtonClick)
-        self.buttonLayout.addWidget(self.yellowButton)
+        self.yellowButton.clicked.connect(lambda: self.printSectors("Yellow"))
+        button_layout.addWidget(self.yellowButton)
 
-        self.VBL.addLayout(self.buttonLayout)
+        self.layout.addLayout(button_layout)
 
-        self.Worker1 = Worker1()
-        self.Worker1.start()
+        self.Worker1 = Worker1(self)
         self.Worker1.ImageUpdate.connect(self.ImageUpdateSlot)
+        self.Worker1.start()
 
-        self.setLayout(self.VBL)
+    def updateSlidersFromColor(self):
+        current_color = self.colorSelector.currentText()
+        if current_color == "Not Calibrating":
+            for name in self.sliders:
+                self.sliders[name].setEnabled(False)
+            return
+        for name in self.sliders:
+            self.sliders[name].setEnabled(True)
+        lower, upper, _ = self.Worker1.color_ranges[current_color]
+        self.sliders["H Lower"].setValue(lower[0])
+        self.sliders["S Lower"].setValue(lower[1])
+        self.sliders["V Lower"].setValue(lower[2])
+        self.sliders["H Upper"].setValue(upper[0])
+        self.sliders["S Upper"].setValue(upper[1])
+        self.sliders["V Upper"].setValue(upper[2])
 
-    # -----------------------------------------------------------------------------------------------------
-    # -------------------------------------- Functions ----------------------------------------------------
-    # -----------------------------------------------------------------------------------------------------
+    def updateColorRange(self):
+        current_color = self.colorSelector.currentText()
+        if current_color == "Not Calibrating":
+            return
+        lower = [self.sliders["H Lower"].value(), self.sliders["S Lower"].value(), self.sliders["V Lower"].value()]
+        upper = [self.sliders["H Upper"].value(), self.sliders["S Upper"].value(), self.sliders["V Upper"].value()]
+        self.Worker1.color_ranges[current_color] = (lower, upper, self.Worker1.color_ranges[current_color][2])
 
     def ImageUpdateSlot(self, Image):
         self.FeedLabel.setPixmap(QPixmap.fromImage(Image))
 
-    def CancelFeed(self):
+    def printSectors(self, color):
+        sections = self.Worker1.checkColorPresence(color)
+        sections_str = ','.join(map(str, sections))  # Convert list to comma-separated string
+        self.ser.write(sections_str.encode('utf-8'))  # Encode as UTF-8
+        print(f"{color} detected in sections: {sections}")
+
+    def saveCalibration(self):
+        self.Worker1.saveCalibration()
+        print("Calibration saved.")
+
+    def closeEvent(self, event):
         self.Worker1.stop()
+        event.accept()
 
-    def onBlueButtonClick(self):
-        try:
-            sections = self.Worker1.checkColorPresence("Red")
-            sections_str = ','.join(map(str, sections))  # Convert list to comma-separated string
-            self.ser.write(sections_str.encode('utf-8'))  # Encode as UTF-8
-            print(f"Blue detected in sections: {sections_str}") # Debugging output
-
-        except ValueError:
-            QMessageBox.warning(self, 'Error', ':(')
-
-
-    def onGreenButtonClick(self):
-        try:
-            sections = self.Worker1.checkColorPresence("Green")
-            sections_str = ','.join(map(str, sections))  # Convert list to comma-separated string
-            self.ser.write(sections_str.encode('utf-8'))  # Encode as UTF-8
-            print(f"Green detected in sections: {sections_str}") # Debugging output
-
-        except ValueError:
-            QMessageBox.warning(self, 'Error', ':(')
-
-    def onRedButtonClick(self):
-        try:
-            sections = self.Worker1.checkColorPresence("Blue")
-            sections_str = ','.join(map(str, sections))  # Convert list to comma-separated string
-            self.ser.write(sections_str.encode('utf-8'))  # Encode as UTF-8
-            print(f"Red detected in sections: {sections_str}") # Debugging output
-
-        except ValueError:
-            QMessageBox.warning(self, 'Error', ':(')
-
-    def onYellowButtonClick(self):
-        try:
-            sections = self.Worker1.checkColorPresence("Yellow")
-            sections_str = ','.join(map(str, sections))  # Convert list to comma-separated string
-            self.ser.write(sections_str.encode('utf-8'))  # Encode as UTF-8
-            print(f"Yellow detected in sections: {sections_str}") # Debugging output
-
-        except ValueError:
-            QMessageBox.warning(self, 'Error', ':(')
-
-
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Q:
+            self.close()
+    
     def initSerial(self):
         try:
             # ADJUST TO THE CORRECT PORT! IF YOU ARE USING WINDOWS, IT WILL BE 'COMX', WHERE X IS THE PORT NUMBER
@@ -127,115 +130,120 @@ class MainWindow(QWidget):
         event.accept()
 
 
-# -----------------------------------------------------------------------------------------------------
-# -------------------------------------- Worker Class -------------------------------------------------
-# -----------------------------------------------------------------------------------------------------
 
 class Worker1(QThread):
     ImageUpdate = pyqtSignal(QImage)
-    
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.parent_widget = parent
+        self.picam2 = Picamera2()
+        config = self.picam2.create_preview_configuration(main={"size": (640, 480), "format": "RGB888"})
+        self.picam2.configure(config)
+        self.picam2.start()
+        self.color_ranges = {
+            "Red": ([0, 120, 70], [10, 255, 255], (0, 0, 255)),
+            "Green": ([36, 50, 70], [89, 255, 255], (0, 255, 0)),
+            "Blue": ([94, 80, 2], [126, 255, 255], (255, 0, 0)),
+            "Yellow": ([15, 150, 150], [35, 255, 255], (0, 255, 255))
+        }
+        self.loadCalibration()
+
+    def loadCalibration(self):
+        try:
+            with open("calibration.json", "r") as f:
+                data = json.load(f)
+                for color, values in data.items():
+                    self.color_ranges[color] = (values["lower"], values["upper"], self.color_ranges[color][2])
+        except FileNotFoundError:
+            pass
+
+    def saveCalibration(self):
+        data = {
+            color: {
+                "lower": values[0],
+                "upper": values[1]
+            } for color, values in self.color_ranges.items()
+        }
+        with open("calibration.json", "w") as f:
+            json.dump(data, f, indent=4)
+
     def run(self):
         self.ThreadActive = True
-        picam2 = Picamera2()
-        config = picam2.create_preview_configuration(main={"size": (640, 480), "format": "RGB888"})
-        picam2.configure(config)
-        picam2.start()
-
         while self.ThreadActive:
-            frame = picam2.capture_array()
-            CorrectedImage = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)  # Correct color channels
+            frame = self.picam2.capture_array()
+            if frame is None:
+                continue
 
-            hsvFrame = cv2.cvtColor(CorrectedImage, cv2.COLOR_BGR2HSV)
+            self.frame = frame.copy()
+            hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
 
-            # Define color ranges (FIXED: swapped Red and Blue)
-            self.color_ranges = {
-                "Red": ([110, 32, 128], [130, 255, 137], (0, 0, 255)),  # Corrected Red in BGR
-                "Green": ([0, 85, 73], [77, 180, 228], (0, 255, 0)),  # Green in BGR
-                "Blue": ([110, 70, 90], [200, 255, 255], (255, 0, 0)),  # Corrected Blue in BGR
-                "Yellow": ([90, 138, 62], [105, 255, 236], (255, 255, 0)),  # Corrected Blue in BGR
-            }
+            color_being_calibrated = self.parent_widget.colorSelector.currentText()
 
-            # Save the frame to use in checkColorPresence
-            self.frame = CorrectedImage
+            if color_being_calibrated != "Not Calibrating":
+                lower, upper, _ = self.color_ranges[color_being_calibrated]
+                lower = np.array(lower, np.uint8)
+                upper = np.array(upper, np.uint8)
+                mask = cv2.inRange(hsv, lower, upper)
+                display_img = cv2.cvtColor(mask, cv2.COLOR_GRAY2RGB)
+            else:
+                display_img = frame.copy()
+                for color in self.color_ranges:
+                    lower, upper, bgr = self.color_ranges[color]
+                    lower = np.array(lower, np.uint8)
+                    upper = np.array(upper, np.uint8)
+                    mask = cv2.inRange(hsv, lower, upper)
+                    kernel = np.ones((5, 5), "uint8")
+                    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+                    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+                    contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+                    for contour in contours:
+                        area = cv2.contourArea(contour)
+                        if area > 800:
+                            x, y, w, h = cv2.boundingRect(contour)
+                            cv2.rectangle(display_img, (x, y), (x + w, y + h), bgr, 2)
 
-            for _, (lower, upper, bgr) in self.color_ranges.items():
-                lower_bound = np.array(lower, np.uint8)
-                upper_bound = np.array(upper, np.uint8)
-
-                mask = cv2.inRange(hsvFrame, lower_bound, upper_bound)
-
-                kernel = np.ones((5, 5), "uint8")
-                mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
-                mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-
-                contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-
-                for contour in contours:
-                    area = cv2.contourArea(contour)
-                    if area > 300:
-                        x, y, w, h = cv2.boundingRect(contour)
-                        # Draw bounding box only (no labels)
-                        cv2.rectangle(CorrectedImage, (x, y), (x + w, y + h), bgr, 2)
-
-            # Flip the image horizontally (left-right flip)
-            FlippedImage = cv2.flip(CorrectedImage, 1)  # Flip horizontally
-
-            # Convert to Qt format and update UI
-            ConvertToQtFormat = QImage(FlippedImage.data, FlippedImage.shape[1], FlippedImage.shape[0], QImage.Format_RGB888)
-            Pic = ConvertToQtFormat.scaled(640, 480, Qt.KeepAspectRatio)
-            self.ImageUpdate.emit(Pic)
+            rgb_image = cv2.cvtColor(display_img, cv2.COLOR_BGR2RGB)
+            qt_img = QImage(rgb_image.data, rgb_image.shape[1], rgb_image.shape[0], rgb_image.strides[0], QImage.Format_RGB888)
+            self.ImageUpdate.emit(qt_img)
 
     def stop(self):
         self.ThreadActive = False
         self.quit()
+        self.wait()
+        self.picam2.stop()
 
     def checkColorPresence(self, color):
-        color_ranges = self.color_ranges[color]
-        lower_bound = np.array(color_ranges[0], np.uint8)
-        upper_bound = np.array(color_ranges[1], np.uint8)
-
+        lower, upper, _ = self.color_ranges[color]
+        lower_bound = np.array(lower, np.uint8)
+        upper_bound = np.array(upper, np.uint8)
         hsvFrame = cv2.cvtColor(self.frame, cv2.COLOR_BGR2HSV)
         mask = cv2.inRange(hsvFrame, lower_bound, upper_bound)
-
         kernel = np.ones((5, 5), "uint8")
         mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-
-        # Divide the frame into 3 vertical sections
-        sections = [[], [], []]  # Indexes: 0, 1, 2 for the sections
+        sections = [[], [], []]
         height, width = mask.shape
-
-        # Divide width into three parts (left, middle, right)
         section_width = width // 3
-
-        # Loop through contours and assign them to sections based on their position
         contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-
         for contour in contours:
             area = cv2.contourArea(contour)
             if area > 300:
                 x, y, w, h = cv2.boundingRect(contour)
-                # Draw bounding box on CorrectedImage
-                cv2.rectangle(self.frame, (x, y), (x + w, y + h), color_ranges[2], 2)
-
-                # Determine the section of the bounding box's x-coordinate
                 if x + w // 2 < section_width:
                     sections[0].append(contour)
                 elif x + w // 2 < 2 * section_width:
                     sections[1].append(contour)
                 else:
                     sections[2].append(contour)
-
-        # Now check which sections have any contours
-        detected_sections = []
-        for idx, section in enumerate(sections):
-            if section:
-                detected_sections.append(idx)
-
+        detected_sections = [idx for idx, section in enumerate(sections) if section]
         return detected_sections
 
+
+
+
 if __name__ == "__main__":
-    App = QApplication(sys.argv)
-    Root = MainWindow()
-    Root.show()
-    sys.exit(App.exec_())
+    app = QApplication(sys.argv)
+    window = MainWindow()
+    window.show()
+    sys.exit(app.exec_())
