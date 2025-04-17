@@ -46,6 +46,11 @@ class MainWindow(QWidget):
         self.saveButton.clicked.connect(self.saveCalibration)
         self.layout.addWidget(self.saveButton)
 
+        # Checkbox to toggle vertical line markers
+        self.toggleMarkersCheckbox = QCheckBox("Show vertical markers (1/3 and 2/3)")
+        self.toggleMarkersCheckbox.stateChanged.connect(self.toggleMarkers)
+        self.layout.addWidget(self.toggleMarkersCheckbox)
+
         # Video feed display
         self.FeedLabel = QLabel()
         self.layout.addWidget(self.FeedLabel)
@@ -131,6 +136,10 @@ class MainWindow(QWidget):
         self.Worker1.saveCalibration()
         print("Calibration saved.")
 
+    def toggleMarkers(self, state):
+        # Toggle the display of vertical line markers based on checkbox state
+        self.Worker1.show_markers = (state == Qt.Checked)
+
     def keyPressEvent(self, event):
         # Close app on 'Q' key press
         if event.key() == Qt.Key_Q:
@@ -179,6 +188,7 @@ class Worker1(QThread):
 
         # Load saved calibrations if present
         self.loadCalibration()
+        self.show_markers = False
 
     def loadCalibration(self):
         # Load HSV color bounds from JSON file
@@ -230,6 +240,11 @@ class Worker1(QThread):
                         if cv2.contourArea(contour) > 800:
                             x, y, w, h = cv2.boundingRect(contour)
                             cv2.rectangle(display_img, (x, y), (x + w, y + h), bgr, 2)
+            
+            if self.show_markers:
+                height, width = display_img.shape[:2]
+                cv2.line(display_img, (width // 3, 0), (width // 3, height), (0, 255, 0), 2)
+                cv2.line(display_img, (2 * width // 3, 0), (2 * width // 3, height), (0, 255, 0), 2)
 
             rgb_image = cv2.cvtColor(display_img, cv2.COLOR_BGR2RGB)
             qt_img = QImage(rgb_image.data, rgb_image.shape[1], rgb_image.shape[0], rgb_image.strides[0], QImage.Format_RGB888)

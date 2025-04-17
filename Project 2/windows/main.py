@@ -44,6 +44,11 @@ class MainWindow(QWidget):
         self.saveButton.clicked.connect(self.saveCalibration)
         self.layout.addWidget(self.saveButton)
 
+        # Checkbox to toggle vertical line markers
+        self.toggleMarkersCheckbox = QCheckBox("Show vertical markers (1/3 and 2/3)")
+        self.toggleMarkersCheckbox.stateChanged.connect(self.toggleMarkers)
+        self.layout.addWidget(self.toggleMarkersCheckbox)
+
         # Label to display the camera feed
         self.FeedLabel = QLabel()
         self.layout.addWidget(self.FeedLabel)
@@ -128,6 +133,10 @@ class MainWindow(QWidget):
         self.Worker1.saveCalibration()
         print("Calibration saved.")
 
+    def toggleMarkers(self, state):
+        # Toggle the display of vertical line markers based on checkbox state
+        self.Worker1.show_markers = (state == Qt.Checked)
+
     # Exit application on pressing Q
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_Q:
@@ -136,7 +145,7 @@ class MainWindow(QWidget):
     # Initialize serial connection to Arduino
     def initSerial(self):
         try:
-            self.ser = serial.Serial(r'COM5', 9600, timeout=1)
+            self.ser = serial.Serial(r'COM4', 9600, timeout=1)
             time.sleep(2)
         except serial.SerialException:
             QMessageBox.critical(self, 'Connection Error', 'Failed to open serial port.')
@@ -168,6 +177,7 @@ class Worker1(QThread):
             "Yellow": ([15, 150, 150], [35, 255, 255], (255, 255, 0))
         }
         self.loadCalibration()
+        self.show_markers = False
 
     # Load saved HSV calibration values from file
     def loadCalibration(self):
@@ -239,6 +249,12 @@ class Worker1(QThread):
 
                             # Draw bounding rectangle around detected color region
                             cv2.rectangle(display_img, (x, y), (x + w, y + h), bgr, 2)
+
+             # If the markers are enabled, draw vertical lines at 1/3 and 2/3 of the width
+            if self.show_markers:
+                height, width = display_img.shape[:2]
+                cv2.line(display_img, (width // 3, 0), (width // 3, height), (0, 255, 0), 2)
+                cv2.line(display_img, (2 * width // 3, 0), (2 * width // 3, height), (0, 255, 0), 2)
 
             # Convert BGR to RGB for Qt display
             rgb_image = cv2.cvtColor(display_img, cv2.COLOR_BGR2RGB)
